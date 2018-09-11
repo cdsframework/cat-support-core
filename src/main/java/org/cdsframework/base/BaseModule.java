@@ -289,9 +289,6 @@ public abstract class BaseModule<T extends BaseDTO> implements Serializable {
                     logger.error("InstantiationException on ", getDtoClassType().getCanonicalName(), ": ", e.getMessage());
                 }
                 initializeSearch();
-                if (DTOUtils.isCached(dtoClassType) && lazy) {
-                    logger.warn(METHODNAME, "DTO class type is cached and lazy is set to true. Sorting will likely not work correctly.");
-                }
             } else {
                 logger.warn("ClassUtils.getTypeArgument returned null for: ", getClass().getCanonicalName());
             }
