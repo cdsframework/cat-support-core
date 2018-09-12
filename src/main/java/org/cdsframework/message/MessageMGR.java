@@ -7,22 +7,25 @@
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU
  * Lesser General Public License as published by the Free Software Foundation, either version 3 of the
  * License, or (at your option) any later version. You should have received a copy of the GNU Lesser
- * General Public License along with this program. If not, see <http://www.gnu.org/licenses/> for more
- * details.
+ * General Public License along with this program. If not, see
+ * <http://www.gnu.org/licenses/> for more details.
  *
- * The above-named contributors (HLN Consulting, LLC) are also licensed by the New York City
- * Department of Health and Mental Hygiene, Bureau of Immunization to have (without restriction,
- * limitation, and warranty) complete irrevocable access and rights to this project.
+ * The above-named contributors (HLN Consulting, LLC) are also licensed by the
+ * New York City Department of Health and Mental Hygiene, Bureau of Immunization
+ * to have (without restriction, limitation, and warranty) complete irrevocable
+ * access and rights to this project.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; THE
- * SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING,
- * BUT NOT LIMITED TO, WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDERS, IF ANY, OR DEVELOPERS BE LIABLE FOR
- * ANY CLAIM, DAMAGES, OR OTHER LIABILITY OF ANY KIND, ARISING FROM, OUT OF, OR IN CONNECTION WITH
- * THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+ * EVENT SHALL THE COPYRIGHT HOLDERS, IF ANY, OR DEVELOPERS BE LIABLE FOR ANY
+ * CLAIM, DAMAGES, OR OTHER LIABILITY OF ANY KIND, ARISING FROM, OUT OF, OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *
- * For more information about this software, see https://www.hln.com/services/open-source/ or send
- * correspondence to ice@hln.com.
+ * For more information about this software, see
+ * https://www.hln.com/services/open-source/ or send correspondence to
+ * ice@hln.com.
  */
 package org.cdsframework.message;
 
@@ -30,11 +33,13 @@ import java.io.Serializable;
 import java.net.URL;
 import java.text.MessageFormat;
 import java.util.Arrays;
+import java.util.List;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
 import javax.faces.application.FacesMessage;
 import javax.faces.application.FacesMessage.Severity;
 import javax.faces.context.FacesContext;
+import javax.inject.Inject;
 import org.cdsframework.exceptions.CatException;
 import org.cdsframework.handlers.DefaultExceptionHandler;
 import org.cdsframework.util.LogUtils;
@@ -42,6 +47,7 @@ import org.cdsframework.util.StringUtils;
 import javax.inject.Named;
 import org.cdsframework.listeners.StartupListener;
 import org.cdsframework.message.Message.MessageType;
+import org.cdsframework.section.property.SystemPropertyMGR;
 import org.primefaces.context.RequestContext;
 
 /**
@@ -50,22 +56,24 @@ import org.primefaces.context.RequestContext;
  */
 @Named
 public class MessageMGR implements Serializable {
-
+    
     private static final LogUtils logger = LogUtils.getLogger(MessageMGR.class);
     private static final long serialVersionUID = -4963439109635472399L;
     private String messageBundle = "application";
     private String pluginId;
-
+    @Inject
+    protected SystemPropertyMGR systemPropertyMGR;
+    
     public void setMessageBundle(String messageBundle) {
         logger.debug("setMessageBundle ", messageBundle);
         this.messageBundle = messageBundle;
     }
-
+    
     public void setMessageBundle(Class messageBundleClass) {
         if (messageBundleClass != null) {
             logger.debug("setMessageBundle ", messageBundleClass.getCanonicalName());
         }
-
+        
         try {
             setPluginId(messageBundleClass);
             setMessageBundle(getMessageBundleFromClass(messageBundleClass));
@@ -73,12 +81,12 @@ public class MessageMGR implements Serializable {
             logger.error(e);
         }
     }
-
+    
     public String getMessageBundle() {
         logger.debug("getMessageBundle ", messageBundle);
         return messageBundle;
     }
-
+    
     public static String getMessageBundleFromClass(Class messageBundleClass) throws CatException {
         final String METHODNAME = "getMessageBundleFromClass ";
         String result = null;
@@ -106,7 +114,7 @@ public class MessageMGR implements Serializable {
         final String METHODNAME = "selectMessageBundle ";
         logger.debug("selectMessageBundle ", messageKey);
         FacesContext facesContext = FacesContext.getCurrentInstance();
-
+        
         if (facesContext != null) {
             // see if the key exists in the current message bundle and use the current message bundle if it does
             if (getMessageBundle() != null) {
@@ -126,6 +134,23 @@ public class MessageMGR implements Serializable {
             // see if the key exists at the plugin message bundle and use the plugin message bundle if it does
             if (getPluginId() != null) {
                 String pluginMessageBundle = "org.cdsframework.plugin." + getPluginId().trim().toLowerCase() + ".message";
+                try {
+                    ResourceBundle bundle = ResourceBundle.getBundle(pluginMessageBundle, facesContext.getViewRoot().getLocale());
+                    if (bundle != null && bundle.containsKey(messageKey)) {
+                        logger.debug(METHODNAME, "found message key in plugin resource: ", pluginMessageBundle, " - ", messageKey);
+                        setMessageBundle(pluginMessageBundle);
+                        return true;
+                    } else {
+                        logger.debug(METHODNAME, "missing message key from plugin resource: ", pluginMessageBundle, " - ", messageKey);
+                    }
+                } catch (MissingResourceException e) {
+                    logger.debug(METHODNAME, "missing plugin resource: ", pluginMessageBundle, " - ", e.getMessage());
+                }
+            }
+
+            // see if the key exists at the native war plugin message bundle and use the plugin message bundle if it does
+            if (getPluginId() != null) {
+                String pluginMessageBundle = "WEB-INF.classes.org.cdsframework.plugin." + getPluginId().trim().toLowerCase() + ".message";
                 try {
                     ResourceBundle bundle = ResourceBundle.getBundle(pluginMessageBundle, facesContext.getViewRoot().getLocale());
                     if (bundle != null && bundle.containsKey(messageKey)) {
@@ -161,9 +186,9 @@ public class MessageMGR implements Serializable {
         } else {
             logger.error(METHODNAME, "facesContext is null!");
         }
-
+        
         return false;
-
+        
     }
 
     /**
@@ -189,16 +214,25 @@ public class MessageMGR implements Serializable {
         if (getClass().getClassLoader() != null
                 && messageBundleClass != null
                 && messageBundleClass.getCanonicalName() != null) {
-            logger.debug("setPluginId ", messageBundleClass.getCanonicalName());
+            logger.debug("setPluginId messageBundleClass.getCanonicalName()=", messageBundleClass.getCanonicalName());
             URL resource = getClass().getClassLoader().getResource(messageBundleClass.getCanonicalName().replaceAll("\\.", "/") + ".class");
             if (resource != null
                     && resource.getPath() != null) {
                 String[] splitItems = resource.getPath().split("!")[0].split("/");
                 if (splitItems.length > 0) {
-                    splitItems = splitItems[splitItems.length - 1].split("-");
-                    if (splitItems.length >= 3) {
-                        logger.debug("pluginId: ", splitItems[2], " - for: ", messageBundleClass);
-                        setPluginId(splitItems[2]);
+                    logger.debug("setPluginId splitItems=", Arrays.toString(splitItems));
+                    String[] newSplitItems = splitItems[splitItems.length - 1].split("-");
+                    logger.debug("setPluginId newSplitItems=", Arrays.toString(newSplitItems));
+                    if (newSplitItems.length > 3) {
+                        logger.debug("pluginId: ", newSplitItems[2], " - for: ", messageBundleClass);
+                        setPluginId(newSplitItems[2]);
+                    } else {
+                        splitItems = new String[]{splitItems[splitItems.length - 3]};
+                        logger.debug("pluginId: ", splitItems[0], " - for: ", messageBundleClass);
+                        List<String> scopes = systemPropertyMGR.getScopes();
+                        if (scopes.contains(splitItems[0])) {
+                            setPluginId(splitItems[0]);
+                        }
                     }
                 }
             }
@@ -215,7 +249,7 @@ public class MessageMGR implements Serializable {
         logger.debug("setPluginId ", pluginId);
         this.pluginId = pluginId;
     }
-
+    
     public ResourceBundle getResourceBundle() {
         final String METHODNAME = "getResourceBundle ";
         ResourceBundle bundle = null;
@@ -228,7 +262,7 @@ public class MessageMGR implements Serializable {
         logger.debug("getResourceBundle ", bundle);
         return bundle;
     }
-
+    
     public String getResourceBundleKeyValue(String messageKey) {
         logger.debug("getResourceBundleKeyValue ", messageKey);
         String result = null;
@@ -244,59 +278,59 @@ public class MessageMGR implements Serializable {
         }
         return result;
     }
-
+    
     public void displayInfo(String messageKey) {
         displayMessage(FacesMessage.SEVERITY_INFO, false, getResourceBundleKeyValue(messageKey));
     }
-
+    
     public void displayInfo(String messageKey, Object... args) {
         displayMessage(FacesMessage.SEVERITY_INFO, false, getResourceBundleKeyValue(messageKey), args);
     }
-
+    
     public void displayInfoMessage(String message) {
         displayMessage(FacesMessage.SEVERITY_INFO, false, message);
     }
-
+    
     public void displayInfoMessage(String message, Object... args) {
         displayMessage(FacesMessage.SEVERITY_INFO, false, message, args);
     }
-
+    
     public void displayWarn(String messageKey) {
         displayMessage(FacesMessage.SEVERITY_WARN, false, getResourceBundleKeyValue(messageKey));
     }
-
+    
     public void displayWarn(String messageKey, Object... args) {
         displayMessage(FacesMessage.SEVERITY_WARN, false, getResourceBundleKeyValue(messageKey), args);
     }
-
+    
     public void displayWarnMessage(String message) {
         displayMessage(FacesMessage.SEVERITY_WARN, false, message);
     }
-
+    
     public void displayWarnMessage(String message, Object... args) {
         displayMessage(FacesMessage.SEVERITY_WARN, false, message, args);
     }
-
+    
     public void displayError(String messageKey) {
         displayMessage(FacesMessage.SEVERITY_ERROR, false, getResourceBundleKeyValue(messageKey));
     }
-
+    
     public void displayError(String messageKey, Object... args) {
         displayMessage(FacesMessage.SEVERITY_ERROR, false, getResourceBundleKeyValue(messageKey), args);
     }
-
+    
     public void displayErrorMessage(String message) {
         displayMessage(FacesMessage.SEVERITY_ERROR, false, message);
     }
-
+    
     public void displayErrorMessage(String message, Object... args) {
         displayMessage(FacesMessage.SEVERITY_ERROR, false, message, args);
     }
-
+    
     public void displayErrorMessageKey(boolean outsideLifeCycle, String messageKey, String reason, Object... args) {
         displayErrorMessageBundle(messageBundle, messageKey, reason, outsideLifeCycle, args);
     }
-
+    
     private void displayErrorMessageBundle(String messageBundle, String messageKey, String reason, boolean outsideLifeCycle, Object... args) {
         final String METHODNAME = "displayErrorMessageBundle ";
         logger.debug(METHODNAME, messageBundle, "; ", messageKey, "; ", reason, "; ", args != null ? Arrays.asList(args) : null);
@@ -329,19 +363,19 @@ public class MessageMGR implements Serializable {
             }
             defaultText = reason + " (" + messageKey + ")" + period;
         }
-
+        
         if (message != null) {
             message = getMessageFormat(message, args);
         }
-
+        
         if (StringUtils.isEmpty(message)) {
             message = defaultText;
         }
-
+        
         logger.debug(METHODNAME, "about to displayErrorMessage message=", message);
         displayMessage(FacesMessage.SEVERITY_ERROR, outsideLifeCycle, message);
     }
-
+    
     private void displayMessage(Severity severity, boolean outsideLifeCycle, String message, Object... args) {
         final String METHODNAME = "displayMessage ";
         logger.debug(METHODNAME, message, "; ", args != null ? Arrays.asList(args) : null);
@@ -366,14 +400,14 @@ public class MessageMGR implements Serializable {
             logger.error(METHODNAME, "facesContext is null!");
         }
     }
-
+    
     public void displayMessage(Message message) {
         logger.debug("displayMessage ", message);
-
+        
         String messageKey = message.getMessageKey();
         String messageDisplay = message.getMessageDisplay();
         Object[] messageArguments = (String[]) message.getMessageArguments();
-
+        
         if (null != message.getMessageType()) {
             if (!StringUtils.isEmpty(messageKey)) {
                 displayMessage(getSeverity(message.getMessageType()), false, getResourceBundleKeyValue(messageKey), messageArguments);
@@ -409,7 +443,7 @@ public class MessageMGR implements Serializable {
         final String METHODNAME = "getSeverity ";
         logger.debug(METHODNAME, "messageType=", messageType);
         if (messageType != null) {
-
+            
             switch (messageType) {
                 case Info:
                     return FacesMessage.SEVERITY_INFO;
@@ -426,7 +460,7 @@ public class MessageMGR implements Serializable {
             return FacesMessage.SEVERITY_ERROR;
         }
     }
-
+    
     private String concatArgs(Object... args) {
         String arguments = "";
         if (args.length > 0) {
@@ -440,7 +474,7 @@ public class MessageMGR implements Serializable {
         }
         return arguments;
     }
-
+    
     private Object[] addMessageKeyToArgs(String messageKey, Object... argsIn) {
         final String METHODNAME = "addMessageKeyToArgs ";
 
@@ -464,10 +498,10 @@ public class MessageMGR implements Serializable {
                 logger.debug(METHODNAME + "arg=" + arg);
             }
         }
-
+        
         return argsOut;
     }
-
+    
     private String getMessageFormat(String message, Object... args) {
         final String METHODNAME = "getMessageFormat ";
         try {
@@ -479,7 +513,7 @@ public class MessageMGR implements Serializable {
             return message;
         }
     }
-
+    
     private FacesMessage getFacesMessage(Severity severity, String summary, String detail) {
         final String METHODNAME = "getFacesMessage ";
         try {
@@ -491,5 +525,5 @@ public class MessageMGR implements Serializable {
             return new FacesMessage(severity, summary, "There was an error producing the FacesMessage - see log for details.");
         }
     }
-
+    
 }
