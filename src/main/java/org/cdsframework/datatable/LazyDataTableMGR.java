@@ -117,11 +117,6 @@ public class LazyDataTableMGR<T extends BaseDTO> extends LazyDataModel<T> implem
     }
 
     @Override
-    public Object getWrappedData() {
-        return super.getWrappedData();
-    }
-
-    @Override
     public void setWrappedData(Object wrappedData) {
         super.setWrappedData(wrappedData);
         if (dataTableServices == null) {
