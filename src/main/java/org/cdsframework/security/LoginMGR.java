@@ -40,12 +40,15 @@ import javax.faces.event.ActionEvent;
 import javax.inject.Inject;
 import javax.inject.Named;
 import org.cdsframework.application.Mts;
+import org.cdsframework.base.BaseException;
 import org.cdsframework.client.support.SecurityMGRClient;
+import org.cdsframework.dto.PropertyBagDTO;
 import org.cdsframework.dto.SessionDTO;
 import org.cdsframework.dto.UserDTO;
 import org.cdsframework.enumeration.PermissionType;
 import org.cdsframework.exceptions.AuthenticationException;
 import org.cdsframework.exceptions.AuthorizationException;
+import org.cdsframework.exceptions.ConstraintViolationException;
 import org.cdsframework.exceptions.MtsException;
 import org.cdsframework.exceptions.NotFoundException;
 import org.cdsframework.exceptions.ValidationException;
@@ -98,23 +101,27 @@ public class LoginMGR implements Serializable {
         // Call the Security Manager to login
         SecurityMGRClient securityMGRClient = getSecurityMGRClient();
         if (securityMGRClient != null) {
+            BaseException failureReason = null;
             try {
                 authenticated = securityMGRClient.authenticate(userDTO.getUsername(), userDTO.getPasswordHash(), mts.getMtsApp());
             } catch (AuthenticationException e) {
                 logger.error(METHODNAME, e.getMessage());
                 authenticated = false;
+                failureReason = e;
             } catch (AuthorizationException e) {
                 logger.error(METHODNAME, e.getMessage());
                 authenticated = false;
+                failureReason = e;
             } catch (MtsException e) {
                 logger.error(METHODNAME, e);
                 authenticated = false;
+                failureReason = e;
             } catch (Exception e) {
                 logger.error(METHODNAME, e);
                 authenticated = false;
             }
 
-            login(authenticated);
+            login(authenticated, failureReason);
 
         } else {
             // persist the message across the redirect
@@ -139,6 +146,7 @@ public class LoginMGR implements Serializable {
         // Call the Security Manager to login with session ID
         SecurityMGRClient securityMGRClient = getSecurityMGRClient();
         if (securityMGRClient != null) {
+            BaseException failureReason = null;
             try {
 
                 // check if the session ID is valid
@@ -158,19 +166,22 @@ public class LoginMGR implements Serializable {
             } catch (AuthenticationException e) {
                 logger.error(METHODNAME, e.getMessage());
                 sessionValid = false;
+                failureReason = e;
             } catch (AuthorizationException e) {
                 logger.error(METHODNAME, e.getMessage());
                 sessionValid = false;
+                failureReason = e;
             } catch (MtsException | NotFoundException | ValidationException e) {
                 logger.error(METHODNAME, e);
                 sessionValid = false;
+                failureReason = e;
             } catch (Exception e) {
                 logger.error(METHODNAME, e);
                 sessionValid = false;
             }
 
             logger.info(METHODNAME, "sessionValid=", sessionValid);
-            login(sessionValid);
+            login(sessionValid, failureReason);
 
         } else {
             logger.error(METHODNAME, "securityMGRClient was null!");
@@ -182,7 +193,7 @@ public class LoginMGR implements Serializable {
         }
     }
 
-    private void login(boolean authenticated) throws AuthenticationException, AuthorizationException, MtsException {
+    private void login(boolean authenticated, BaseException failureReason) throws AuthenticationException, AuthorizationException, MtsException {
         final String METHODNAME = "login ";
         UserDTO userDTO = userSession.getUserDTO();
 
@@ -200,7 +211,12 @@ public class LoginMGR implements Serializable {
                 if (sessionDTO != null) {
                     userSession.setSessionDTO(sessionDTO);
                     userDTO = userSession.getUserDTO();
-                    logger.info(userDTO.getUsername(), " successfully logged in...");
+                    if (userDTO.isChangePassword()) {
+                        logger.info(userDTO.getUsername(), " logged in, password change required");
+                    }
+                    else {
+                        logger.info(userDTO.getUsername(), " successfully logged in...");
+                    }
                     if (logger.isDebugEnabled()) {
                         if (userDTO.getUserId() != null) {
                             UserSecuritySchemePermissionMap userSecuritySchemePermissionMap = userSecuritySchemePermissionMapList.get(userDTO.getUserId());
@@ -257,7 +273,34 @@ public class LoginMGR implements Serializable {
                 if (flash != null) {
                     flash.setKeepMessages(true);
                 }
-                messageMGR.displayError("loginFailed");
+                if (failureReason != null) { 
+                    switch (failureReason.getReason()) {
+                    case CHANGE_PASSWORD: {
+                        Application application = facesContext.getApplication();
+                        logger.debug(METHODNAME, "application=", application);
+                        if (application != null) {
+                            NavigationHandler navigationHandler = application.getNavigationHandler();
+                            logger.debug(METHODNAME, "navigationHandler=", navigationHandler);
+                            if (navigationHandler != null) {
+                                navigationHandler.handleNavigation(facesContext, null, "change_password");
+                            }
+                        }
+                        facesContext.renderResponse();
+                    }
+                    break;
+                    case MAX_FAILED_LOGINS:
+                    case USER_DISABLED:
+                    case USER_EXPIRED:
+                        messageMGR.displayError("accountLocked");
+                        break;
+                    default:
+                        messageMGR.displayError("loginFailed");
+                        break;
+                    }  
+                }
+                else {
+                    messageMGR.displayError("loginFailed");
+                }
                 logger.warn(METHODNAME + userDTO.getUsername(), " failed log in...");
             }
         } else {
@@ -334,6 +377,67 @@ public class LoginMGR implements Serializable {
         } else {
             messageMGR.displayError("mtsLoginUnavailable");
             logger.warn("securityMGRClient was null!");
+        }
+    }
+    
+    public void changePassword(ActionEvent actionEvent) throws AuthenticationException, MtsException {
+        final String METHODNAME = "changePassword ";
+        
+        UserDTO formDTO = userSession.getUserDTO();
+        String oldPassword = formDTO.getPasswordHash();
+        String newPassword = formDTO.getPassword();
+        String confirmPassword = formDTO.getPasswordConfirm();
+        String userName = formDTO.getUsername();
+        
+        UserDTO userDTO = new UserDTO();
+        userDTO.setUsername(userName);
+        PropertyBagDTO formProperties = new PropertyBagDTO();
+        formProperties.setQueryClass(UserDTO.DtoByUsername.class.getSimpleName());
+        try {
+            userDTO = mts.getGeneralMGR().findByQuery(userDTO, mts.getSession(), formProperties);
+        } catch (ValidationException | NotFoundException | AuthorizationException e1) {
+            messageMGR.displayError("loginFailed");
+            e1.printStackTrace();
+        }
+
+        // intialize the context
+        FacesContext facesContext = FacesContext.getCurrentInstance();
+        
+        // Change to password in MTS
+        
+        PropertyBagDTO propertyBagDTO = new PropertyBagDTO();
+        propertyBagDTO.put("oldPassword", oldPassword);
+        propertyBagDTO.put("newPassword", newPassword);
+        propertyBagDTO.put("confirmPassword", confirmPassword);
+        
+        try {
+            propertyBagDTO.setQueryClass(UserDTO.UpdatePasswordHash.class.getSimpleName());
+            mts.getGeneralMGR().customSave(userDTO, mts.getSession(), propertyBagDTO);
+            logger.info(userDTO.getUsername(), " password change succeeded");
+            // navigate to the login page
+            if (facesContext != null) {
+                Application application = facesContext.getApplication();
+                logger.debug(METHODNAME, "application=", application);
+                if (application != null) {
+                    NavigationHandler navigationHandler = application.getNavigationHandler();
+                    logger.debug(METHODNAME, "navigationHandler=", navigationHandler);
+                    if (navigationHandler != null) {
+                        navigationHandler.handleNavigation(facesContext, null, "login");
+                    }
+                }
+                facesContext.renderResponse();
+            } else {
+                logger.error(METHODNAME, "facesContext == null!");
+            }
+        } catch (ConstraintViolationException e) {
+            e.printStackTrace();
+            messageMGR.displayError("passwordChangeFailed");
+        } catch (AuthorizationException e) {
+            messageMGR.displayError("passwordError");
+        } catch (NotFoundException e) {
+            messageMGR.displayError("passwordMismatch");
+        } catch (ValidationException | AuthenticationException e) {
+            throw new MtsException(e.getMessage());
         }
     }
 
