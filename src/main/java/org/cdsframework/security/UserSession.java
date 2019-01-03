@@ -119,6 +119,13 @@ public class UserSession implements Serializable {
         }
         return result;
     }
+    
+    public boolean isChangePassword() {
+        if (userDTO != null) {
+            return userDTO.isChangePassword();
+        }
+        return false;
+    }
 
     public void invalidate() {
         try {
