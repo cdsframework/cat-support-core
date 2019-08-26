@@ -92,8 +92,6 @@ public class CatApplication implements Serializable {
 
             themes = new TreeMap<String, String>();
             themes.put("Redmond", "redmond");
-            themes.put("South-Street", "south-street");
-            themes.put("Sunny", "sunny");
 
             init();
         } catch (Exception e) {
